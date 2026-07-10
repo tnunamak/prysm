@@ -34,7 +34,9 @@ type AttCaches struct {
 // various kind of attestations.
 func NewAttCaches() *AttCaches {
 	secsInEpoch := time.Duration(params.BeaconConfig().SlotsPerEpoch.Mul(params.BeaconConfig().SecondsPerSlot))
-	c := cache.New(2*secsInEpoch*time.Second, 2*secsInEpoch*time.Second)
+	// Disable janitor because janitor only stops when the cache is GC'd, which makes it impossible to stop goroutines.
+	// Expired entries are still reclaimed each slot via DeleteExpiredSeenBits.
+	c := cache.New(2*secsInEpoch*time.Second, 0 /* disable janitor */)
 	pool := &AttCaches{
 		unAggregatedAtt:   make(map[attestation.Id]ethpb.Att),
 		aggregatedAtt:     make(map[attestation.Id][]ethpb.Att),
