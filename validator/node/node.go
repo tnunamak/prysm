@@ -465,6 +465,15 @@ func Web3SignerConfig(cliCtx *cli.Context) (*remoteweb3signer.SetupConfig, error
 		if cliCtx.IsSet(flags.Web3SignerKeyFileFlag.Name) {
 			web3signerConfig.KeyFilePath = cliCtx.String(flags.Web3SignerKeyFileFlag.Name)
 		}
+
+		if cliCtx.IsSet(flags.Web3SignerKeyPollIntervalFlag.Name) {
+			web3signerConfig.PollInterval = cliCtx.Duration(flags.Web3SignerKeyPollIntervalFlag.Name)
+
+			// Warn users that poll interval flag is a no-op when no public keys URL is provided.
+			if web3signerConfig.PublicKeysURL == "" {
+				log.Warnf("%s was provided but no %s was provided, so the poll interval will be ignored", flags.Web3SignerKeyPollIntervalFlag.Name, flags.Web3SignerPublicValidatorKeysFlag.Name)
+			}
+		}
 	}
 	return web3signerConfig, nil
 }
