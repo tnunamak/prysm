@@ -819,16 +819,14 @@ func (s *Service) runLateBlockTasks() {
 	if slots.ToEpoch(s.CurrentSlot()) >= cfg.GloasForkEpoch {
 		attDueBPS = cfg.AttestationDueBPSGloas
 	}
-	attThreshold := cfg.SlotComponentDuration(attDueBPS)
-	ticker := slots.NewSlotTickerWithOffset(s.genesisTime, attThreshold, cfg.SecondsPerSlot)
+	ticker := slots.NewSlotTickerWithOffsetFunc(s.genesisTime, slots.ComponentInterval(attDueBPS))
 	for {
 		select {
 		case slot := <-ticker.C():
 			if attDueBPS != cfg.AttestationDueBPSGloas && slots.ToEpoch(slot) >= cfg.GloasForkEpoch {
 				ticker.Done()
 				attDueBPS = cfg.AttestationDueBPSGloas
-				attThreshold = cfg.SlotComponentDuration(attDueBPS)
-				ticker = slots.NewSlotTickerWithOffset(s.genesisTime, attThreshold, cfg.SecondsPerSlot)
+				ticker = slots.NewSlotTickerWithOffsetFunc(s.genesisTime, slots.ComponentInterval(attDueBPS))
 			}
 			s.goroutineCounter.sample(slot)
 			s.lateBlockTasks(s.ctx)

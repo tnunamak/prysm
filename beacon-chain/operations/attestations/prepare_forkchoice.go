@@ -8,6 +8,7 @@ import (
 	"github.com/OffchainLabs/go-bitfield"
 	"github.com/OffchainLabs/prysm/v7/config/features"
 	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
@@ -20,7 +21,7 @@ import (
 // every prepareForkChoiceAttsPeriod.
 func (s *Service) prepareForkChoiceAtts() {
 	intervals := features.Get().AggregateIntervals
-	slotDuration := time.Duration(params.BeaconConfig().SecondsPerSlot) * time.Second
+	slotDuration := params.BeaconConfig().SlotDuration()
 	// Adjust intervals for networks with a lower slot duration (Hive, e2e, etc)
 	for {
 		if intervals[len(intervals)-1] >= slotDuration {
@@ -31,7 +32,14 @@ func (s *Service) prepareForkChoiceAtts() {
 			break
 		}
 	}
-	ticker := slots.NewSlotTickerWithIntervals(s.genesisTime, intervals[:])
+	intervalFuncs := make([]slots.IntervalFunc, 0, len(intervals))
+	for _, offset := range intervals {
+		intervalFuncs = append(intervalFuncs, func(slot primitives.Slot) time.Duration {
+			cfg := params.BeaconConfig()
+			return offset * time.Duration(cfg.SlotDurationAt(slot)/time.Millisecond) / time.Duration(cfg.SlotDurationMillis())
+		})
+	}
+	ticker := slots.NewSlotTickerWithIntervalFuncs(s.genesisTime, intervalFuncs)
 	for {
 		select {
 		case slotInterval := <-ticker.C():
