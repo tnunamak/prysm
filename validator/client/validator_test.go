@@ -37,7 +37,6 @@ import (
 	"github.com/OffchainLabs/prysm/v7/testing/require"
 	validatormock "github.com/OffchainLabs/prysm/v7/testing/validator-mock"
 	"github.com/OffchainLabs/prysm/v7/time/slots"
-	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
 	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
 	dbTest "github.com/OffchainLabs/prysm/v7/validator/db/testing"
 	validatorHelpers "github.com/OffchainLabs/prysm/v7/validator/helpers"
@@ -935,8 +934,7 @@ func TestValidator_WaitForKeymanagerInitialization_web3Signer(t *testing.T) {
 			err := db.SaveGenesisValidatorsRoot(ctx, root)
 			require.NoError(t, err)
 			v := validator{
-				db:        db,
-				enableAPI: false,
+				db: db,
 				web3SignerConfig: &remoteweb3signer.SetupConfig{
 					BaseEndpoint:       "http://localhost:8545",
 					ProvidedPublicKeys: []string{"0xa2b5aaad9c6efefe7bb9b1243a043404f3362937cfb6b31833929833173f476630ea2cfeb0d9ddf15f97ca8685948820"},
@@ -947,40 +945,6 @@ func TestValidator_WaitForKeymanagerInitialization_web3Signer(t *testing.T) {
 			km, err := v.Keymanager()
 			require.NoError(t, err)
 			require.NotNil(t, km)
-		})
-	}
-}
-
-func TestValidator_WaitForKeymanagerInitialization_Web(t *testing.T) {
-	for _, isSlashingProtectionMinimal := range [...]bool{false, true} {
-		t.Run(fmt.Sprintf("SlashingProtectionMinimal:%v", isSlashingProtectionMinimal), func(t *testing.T) {
-			ctx := t.Context()
-			db := dbTest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
-			root := make([]byte, 32)
-			copy(root[2:], "a")
-			err := db.SaveGenesisValidatorsRoot(ctx, root)
-			require.NoError(t, err)
-			walletChan := make(chan *wallet.Wallet, 1)
-			v := validator{
-				db:                    db,
-				enableAPI:             true,
-				walletInitializedFeed: &event.Feed{},
-				walletInitializedChan: walletChan,
-			}
-			wait := make(chan struct{})
-			go func() {
-				defer close(wait)
-				err = v.WaitForKeymanagerInitialization(ctx)
-				require.NoError(t, err)
-				km, err := v.Keymanager()
-				require.NoError(t, err)
-				require.NotNil(t, km)
-			}()
-
-			walletChan <- wallet.New(&wallet.Config{
-				KeymanagerKind: keymanager.Local,
-			})
-			<-wait
 		})
 	}
 }
@@ -1059,7 +1023,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 2),
 					}
 					config := make(map[[fieldparams.BLSPubkeyLength]byte]*proposer.Option)
@@ -1145,7 +1108,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 2),
 					}
 					config := make(map[[fieldparams.BLSPubkeyLength]byte]*proposer.Option)
@@ -1226,7 +1188,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 2),
 					}
 					config := make(map[[fieldparams.BLSPubkeyLength]byte]*proposer.Option)
@@ -1291,7 +1252,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 1),
 						genesisTime:                  time.Unix(0, 0),
 					}
@@ -1359,7 +1319,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 1),
 					}
 					err = v.SetProposerSettings(t.Context(), &proposer.Settings{
@@ -1423,7 +1382,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 1),
 					}
 					config := make(map[[fieldparams.BLSPubkeyLength]byte]*proposer.Option)
@@ -1475,7 +1433,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 1),
 					}
 					config := make(map[[fieldparams.BLSPubkeyLength]byte]*proposer.Option)
@@ -1517,7 +1474,6 @@ func TestValidator_PushSettings(t *testing.T) {
 						db:                           db,
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						enableAPI:                    false,
 						km:                           genMockKeymanager(t, 1),
 					}
 					config := make(map[[fieldparams.BLSPubkeyLength]byte]*proposer.Option)
