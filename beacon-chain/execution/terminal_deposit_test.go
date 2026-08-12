@@ -80,8 +80,10 @@ func TestProcessLogKeepsIgnoringPostTerminalNonDepositEvents(t *testing.T) {
 }
 
 func TestVerifyTerminalDepositCachesGuardsCountUnderflow(t *testing.T) {
-	s := &Service{cfg: &config{}}
-	err := s.verifyTerminalDepositCaches(context.Background(), &TerminalDepositContractConfig{DepositCount: 0, DepositRoot: common.Hash{1}})
+	cache, err := depositsnapshot.New()
+	require.NoError(t, err)
+	s := &Service{cfg: &config{depositCache: cache}, depositTrie: depositsnapshot.NewDepositTree(), lastReceivedMerkleIndex: -1}
+	err = s.verifyTerminalDepositCaches(context.Background(), &TerminalDepositContractConfig{DepositCount: 0, DepositRoot: common.Hash{1}}, false)
 	assert.ErrorContains(t, "count/index", err)
 }
 
@@ -332,12 +334,6 @@ func TestTerminalDepositLocalProofFailures(t *testing.T) {
 		_, err := s.currentDepositCount(context.Background())
 		assert.NotNil(t, err)
 	})
-	t.Run("trie-count", func(t *testing.T) {
-		s, _, _ := terminalServiceFixture(t)
-		s.depositTrie = depositsnapshot.NewDepositTree()
-		_, err := s.currentDepositCount(context.Background())
-		assert.NotNil(t, err)
-	})
 	t.Run("trie-index", func(t *testing.T) {
 		s, _, _ := terminalServiceFixture(t)
 		s.lastReceivedMerkleIndex--
@@ -347,10 +343,7 @@ func TestTerminalDepositLocalProofFailures(t *testing.T) {
 	t.Run("trie-root", func(t *testing.T) {
 		s, _, _ := terminalServiceFixture(t)
 		s.cfg.terminalDepositContract.DepositRoot = common.Hash{9}
-		data := s.cfg.finalizedStateAtStartup.Eth1Data()
-		data.DepositRoot = common.Hash{9}.Bytes()
-		require.NoError(t, s.cfg.finalizedStateAtStartup.SetEth1Data(data))
-		_, err := s.currentDepositCount(context.Background())
+		err := s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, true)
 		assert.NotNil(t, err)
 	})
 	t.Run("containers", func(t *testing.T) {
@@ -360,5 +353,67 @@ func TestTerminalDepositLocalProofFailures(t *testing.T) {
 		s.cfg.depositCache = empty
 		_, err = s.currentDepositCount(context.Background())
 		assert.NotNil(t, err)
+	})
+}
+
+func TestTerminalDepositCacheReplayBoundaries(t *testing.T) {
+	t.Run("exact", func(t *testing.T) {
+		s, _, _ := terminalServiceFixture(t)
+		require.NoError(t, s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, false))
+		require.NoError(t, s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, true))
+	})
+	t.Run("empty-is-valid-before-replay-only", func(t *testing.T) {
+		s, _, _ := terminalServiceFixture(t)
+		tree := depositsnapshot.NewDepositTree()
+		cache, err := depositsnapshot.New()
+		require.NoError(t, err)
+		s.depositTrie = tree
+		s.cfg.depositCache = cache
+		s.lastReceivedMerkleIndex = -1
+		require.NoError(t, s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, false))
+		err = s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, true)
+		assert.ErrorContains(t, "incomplete", err)
+	})
+	t.Run("partial-is-valid-before-replay-only", func(t *testing.T) {
+		s, _, _ := terminalServiceFixture(t)
+		original := s.cfg.depositCache.AllDepositContainers(context.Background())
+		tree := depositsnapshot.NewDepositTree()
+		cache, err := depositsnapshot.New()
+		require.NoError(t, err)
+		for i := 0; i < 2; i++ {
+			root, err := original[i].Deposit.Data.HashTreeRoot()
+			require.NoError(t, err)
+			require.NoError(t, tree.Insert(root[:], i))
+		}
+		partialRoot, err := tree.HashTreeRoot()
+		require.NoError(t, err)
+		partial := original[:2]
+		partial[1].DepositRoot = partialRoot[:]
+		cache.InsertDepositContainers(context.Background(), partial)
+		s.depositTrie = tree
+		s.cfg.depositCache = cache
+		s.lastReceivedMerkleIndex = 1
+		require.NoError(t, s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, false))
+		err = s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, true)
+		assert.ErrorContains(t, "incomplete", err)
+	})
+	t.Run("ahead", func(t *testing.T) {
+		s, _, _ := terminalServiceFixture(t)
+		s.cfg.terminalDepositContract.DepositCount = 3
+		err := s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, false)
+		assert.ErrorContains(t, "count/index", err)
+	})
+	t.Run("noncontiguous", func(t *testing.T) {
+		s, _, _ := terminalServiceFixture(t)
+		ctrs := s.cfg.depositCache.AllDepositContainers(context.Background())
+		ctrs[2].Index = 9
+		err := s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, false)
+		assert.ErrorContains(t, "not contiguous", err)
+	})
+	t.Run("wrong-root-after-replay", func(t *testing.T) {
+		s, _, _ := terminalServiceFixture(t)
+		s.cfg.terminalDepositContract.DepositRoot = common.Hash{9}
+		err := s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, true)
+		assert.ErrorContains(t, "trie root mismatch", err)
 	})
 }

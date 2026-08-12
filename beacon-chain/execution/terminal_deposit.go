@@ -178,7 +178,7 @@ func (s *Service) terminalDepositCount(ctx context.Context) (uint64, error) {
 		fState.Eth1Data().DepositCount != cfg.DepositCount || common.BytesToHash(fState.Eth1Data().DepositRoot) != cfg.DepositRoot {
 		return 0, fmt.Errorf("finalized beacon deposit state proof failed")
 	}
-	if err := s.verifyTerminalDepositCaches(ctx, cfg); err != nil {
+	if err := s.verifyTerminalDepositCaches(ctx, cfg, false); err != nil {
 		return 0, err
 	}
 	for from := cfg.TerminalBlock + 1; from <= uint64(latest.Number); from += 10000 {
@@ -195,28 +195,35 @@ func (s *Service) terminalDepositCount(ctx context.Context) (uint64, error) {
 	return cfg.DepositCount, nil
 }
 
-func (s *Service) verifyTerminalDepositCaches(ctx context.Context, cfg *TerminalDepositContractConfig) error {
-	if cfg.DepositCount == 0 || uint64(s.depositTrie.NumOfItems()) != cfg.DepositCount ||
-		s.lastReceivedMerkleIndex != int64(cfg.DepositCount)-1 {
-		return fmt.Errorf("cached deposit trie count/index proof failed")
+func (s *Service) verifyTerminalDepositCaches(ctx context.Context, cfg *TerminalDepositContractConfig, requireComplete bool) error {
+	trieCount := uint64(s.depositTrie.NumOfItems())
+	expectedLastIndex := int64(trieCount) - 1
+	containers := s.cfg.depositCache.AllDepositContainers(ctx)
+	if cfg.DepositCount == 0 || trieCount > cfg.DepositCount || s.lastReceivedMerkleIndex != expectedLastIndex {
+		return fmt.Errorf("cached deposit trie count/index proof failed: count=%d max=%d last_index=%d expected_last_index=%d", trieCount, cfg.DepositCount, s.lastReceivedMerkleIndex, expectedLastIndex)
+	}
+	if uint64(len(containers)) != trieCount {
+		return fmt.Errorf("cached deposit container count proof failed: containers=%d trie_count=%d", len(containers), trieCount)
+	}
+	if requireComplete && trieCount != cfg.DepositCount {
+		return fmt.Errorf("cached deposit history incomplete after replay: count=%d expected=%d", trieCount, cfg.DepositCount)
 	}
 	root, err := s.depositTrie.HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("cached deposit trie root proof failed: %w", err)
 	}
-	if common.Hash(root) != cfg.DepositRoot {
+	if requireComplete && common.Hash(root) != cfg.DepositRoot {
 		return fmt.Errorf("cached deposit trie root mismatch")
-	}
-	containers := s.cfg.depositCache.AllDepositContainers(ctx)
-	if uint64(len(containers)) != cfg.DepositCount || len(containers) == 0 || containers[len(containers)-1].Index != int64(cfg.DepositCount)-1 {
-		return fmt.Errorf("cached deposit containers count/index proof failed")
 	}
 	for i, container := range containers {
 		if container == nil || container.Index != int64(i) {
 			return fmt.Errorf("cached deposit containers are not contiguous")
 		}
 	}
-	if common.BytesToHash(containers[len(containers)-1].DepositRoot) != cfg.DepositRoot {
+	if len(containers) > 0 && common.BytesToHash(containers[len(containers)-1].DepositRoot) != common.Hash(root) {
+		return fmt.Errorf("cached deposit container root does not match trie root")
+	}
+	if requireComplete && (len(containers) == 0 || common.BytesToHash(containers[len(containers)-1].DepositRoot) != cfg.DepositRoot) {
 		return fmt.Errorf("cached deposit container root mismatch")
 	}
 	return nil

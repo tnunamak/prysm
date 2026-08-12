@@ -324,6 +324,11 @@ func (s *Service) processPastLogs(ctx context.Context) error {
 			return err
 		}
 	}
+	if s.cfg.terminalDepositContract != nil {
+		if err := s.verifyTerminalDepositCaches(ctx, s.cfg.terminalDepositContract, true); err != nil {
+			return err
+		}
+	}
 
 	s.latestEth1DataLock.Lock()
 	s.latestEth1Data.LastRequestedBlock = currentBlockNum
