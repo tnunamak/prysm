@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/types"
 	"github.com/prysmaticlabs/prysm/v5/network"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/testing/assert"
@@ -103,6 +105,8 @@ type terminalRPCFake struct {
 	nonzeroLog         bool
 	blockCalls         int
 	codeBlockTags      []string
+	headerNumber       uint64
+	headerTime         uint64
 }
 
 func (f *terminalRPCFake) Close()                          {}
@@ -119,6 +123,14 @@ func (f *terminalRPCFake) CallContext(_ context.Context, result interface{}, met
 		}
 		*(result.(*hexutil.Uint64)) = v
 	case "eth_getBlockByNumber":
+		if header, ok := result.(**types.HeaderInfo); ok {
+			number := f.headerNumber
+			if number == 0 {
+				number = f.cfg.TerminalBlock + 100
+			}
+			*header = &types.HeaderInfo{Number: new(big.Int).SetUint64(number), Time: f.headerTime}
+			return nil
+		}
 		p := result.(*terminalBlockProof)
 		f.blockCalls++
 		if f.blockCalls == 1 {

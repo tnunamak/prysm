@@ -15,6 +15,7 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
 	testDB "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
 	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/types"
 	"github.com/prysmaticlabs/prysm/v5/config/params"
 	contracts "github.com/prysmaticlabs/prysm/v5/contracts/deposit"
 	"github.com/prysmaticlabs/prysm/v5/contracts/deposit/mock"
@@ -93,6 +94,73 @@ func TestProcessDepositLog_OK(t *testing.T) {
 	require.LogsContain(t, hook, "Deposit registered from deposit contract")
 
 	hook.Reset()
+}
+
+func TestTerminalDepositPartialCacheReplaysToExact(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	beaconConfig := params.BeaconConfig().Copy()
+	beaconConfig.Eth1FollowDistance = 0
+	params.OverrideBeaconConfig(beaconConfig)
+	testAcc, err := mock.Setup()
+	require.NoError(t, err)
+	beaconDB := testDB.SetupDB(t)
+	depositCache, err := depositsnapshot.New()
+	require.NoError(t, err)
+	s, err := NewService(context.Background(), WithDepositContractAddress(testAcc.ContractAddr), WithDatabase(beaconDB), WithDepositCache(depositCache))
+	require.NoError(t, err)
+	s = setDefaultMocks(s)
+	s.httpLogger = testAcc.Backend
+	s.chainStartData.Chainstarted = true
+	testAcc.Backend.Commit()
+	deposits, _, err := util.DeterministicDepositsAndKeys(4)
+	require.NoError(t, err)
+	fullTree, roots, err := util.DeterministicDepositTrie(4)
+	require.NoError(t, err)
+	for i, deposit := range deposits {
+		testAcc.TxOpts.Value = mock.Amount32Eth()
+		testAcc.TxOpts.GasLimit = 1000000
+		_, err = testAcc.Contract.Deposit(testAcc.TxOpts, deposit.Data.PublicKey, deposit.Data.WithdrawalCredentials, deposit.Data.Signature, roots[i])
+		require.NoError(t, err)
+		testAcc.Backend.Commit()
+	}
+	head := testAcc.Backend.Blockchain().CurrentBlock().Number.Uint64()
+	logs, err := testAcc.Backend.FilterLogs(context.Background(), ethereum.FilterQuery{FromBlock: big.NewInt(0), ToBlock: new(big.Int).SetUint64(head), Addresses: []common.Address{testAcc.ContractAddr}})
+	require.NoError(t, err)
+	require.Equal(t, 4, len(logs))
+	require.NoError(t, s.ProcessDepositLog(context.Background(), &logs[0]))
+	require.NoError(t, s.ProcessDepositLog(context.Background(), &logs[1]))
+	finalRoot, err := fullTree.HashTreeRoot()
+	require.NoError(t, err)
+	s.cfg.terminalDepositContract = &TerminalDepositContractConfig{TerminalBlock: head, DepositCount: 4, DepositRoot: common.Hash(finalRoot)}
+	require.NoError(t, s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, false))
+	lastRequested := s.latestEth1Data.LastRequestedBlock
+	_, _, err = s.processBlockInBatch(context.Background(), 0, head, 1000, 100, 4, make(map[uint64]*types.HeaderInfo))
+	require.NoError(t, err)
+	require.NoError(t, s.verifyTerminalDepositCaches(context.Background(), s.cfg.terminalDepositContract, true))
+	require.NotEqual(t, lastRequested, s.latestEth1Data.LastRequestedBlock, "batch replay advances its working cursor")
+
+	// A strict post-replay failure must not commit processBlockInBatch's working cursor.
+	proofService, proofRPC, _ := terminalServiceFixture(t)
+	wrongRoot := common.Hash{9}
+	proofRPC.cfg.Proxy = testAcc.ContractAddr
+	proofRPC.cfg.TerminalBlock = head
+	proofRPC.cfg.DepositCount = 4
+	proofRPC.cfg.DepositRoot = wrongRoot
+	proofRPC.headerNumber = head
+	proofRPC.headerTime = testAcc.Backend.Blockchain().CurrentBlock().Time
+	s.cfg.terminalDepositContract = proofRPC.cfg
+	s.cfg.depositContractAddr = testAcc.ContractAddr
+	s.cfg.finalizedStateAtStartup = proofService.cfg.finalizedStateAtStartup
+	finalizedData := s.cfg.finalizedStateAtStartup.Eth1Data()
+	finalizedData.DepositRoot = wrongRoot.Bytes()
+	require.NoError(t, s.cfg.finalizedStateAtStartup.SetEth1Data(finalizedData))
+	s.rpcClient = proofRPC
+	s.latestEth1Data.LastRequestedBlock = 1
+	s.latestEth1Data.BlockHeight = head
+	s.latestEth1Data.BlockTime = proofRPC.headerTime
+	err = s.processPastLogs(context.Background())
+	assert.ErrorContains(t, "trie root mismatch", err)
+	require.Equal(t, uint64(1), s.latestEth1Data.LastRequestedBlock)
 }
 
 func TestProcessDepositLog_InsertsPendingDeposit(t *testing.T) {

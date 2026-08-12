@@ -291,6 +291,7 @@ func createGenesisTime(timeStamp uint64) uint64 {
 // processPastLogs processes all the past logs from the deposit contract and
 // updates the deposit trie with the data from each individual log.
 func (s *Service) processPastLogs(ctx context.Context) error {
+	originalLastRequestedBlock := s.latestEth1Data.LastRequestedBlock
 	currentBlockNum := s.latestEth1Data.LastRequestedBlock
 	deploymentBlock := params.BeaconNetworkConfig().ContractDeploymentBlock
 	// Start from the deployment block if our last requested block
@@ -326,6 +327,9 @@ func (s *Service) processPastLogs(ctx context.Context) error {
 	}
 	if s.cfg.terminalDepositContract != nil {
 		if err := s.verifyTerminalDepositCaches(ctx, s.cfg.terminalDepositContract, true); err != nil {
+			s.latestEth1DataLock.Lock()
+			s.latestEth1Data.LastRequestedBlock = originalLastRequestedBlock
+			s.latestEth1DataLock.Unlock()
 			return err
 		}
 	}
