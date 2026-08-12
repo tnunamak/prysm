@@ -100,11 +100,12 @@ type terminalRPCFake struct {
 	failure            string
 	nonzeroLog         bool
 	blockCalls         int
+	codeBlockTags      []string
 }
 
 func (f *terminalRPCFake) Close()                          {}
 func (f *terminalRPCFake) BatchCall([]rpc.BatchElem) error { return nil }
-func (f *terminalRPCFake) CallContext(_ context.Context, result interface{}, method string, _ ...interface{}) error {
+func (f *terminalRPCFake) CallContext(_ context.Context, result interface{}, method string, args ...interface{}) error {
 	if f.failure == method+":error" {
 		return errors.New("injected RPC failure")
 	}
@@ -192,6 +193,7 @@ func (f *terminalRPCFake) CallContext(_ context.Context, result interface{}, met
 			tx.BlockNumber--
 		}
 	case "eth_getCode":
+		f.codeBlockTags = append(f.codeBlockTags, args[1].(string))
 		f.codeCalls++
 		if f.codeCalls == 1 {
 			*(result.(*hexutil.Bytes)) = f.code
@@ -260,11 +262,21 @@ func TestCurrentDepositCountDefaultCallsContract(t *testing.T) {
 }
 
 func TestCurrentDepositCountTerminalHappyPathNeverCallsContract(t *testing.T) {
-	s, _, caller := terminalServiceFixture(t)
+	s, rpcFake, caller := terminalServiceFixture(t)
 	raw, err := s.currentDepositCount(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, uint64(4), binary.LittleEndian.Uint64(raw))
 	assert.Equal(t, 0, caller.calls)
+	assert.DeepEqual(t, []string{"latest", "latest"}, rpcFake.codeBlockTags)
+}
+
+func TestTerminalDepositProofDoesNotRequireHistoricalState(t *testing.T) {
+	s, rpcFake, _ := terminalServiceFixture(t)
+	_, err := s.currentDepositCount(context.Background())
+	require.NoError(t, err)
+	for _, tag := range rpcFake.codeBlockTags {
+		assert.Equal(t, "latest", tag)
+	}
 }
 
 func TestTerminalDepositRPCProofFailures(t *testing.T) {

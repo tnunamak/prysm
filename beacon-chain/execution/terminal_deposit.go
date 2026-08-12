@@ -153,8 +153,8 @@ func (s *Service) terminalDepositCount(ctx context.Context) (uint64, error) {
 		return 0, fmt.Errorf("canonical head does not descend beyond terminal block")
 	}
 	var code hexutil.Bytes
-	if err := s.rpcClient.CallContext(ctx, &code, "eth_getCode", cfg.Proxy, blockTag); err != nil {
-		return 0, fmt.Errorf("proxy code proof failed: %w", err)
+	if err := s.rpcClient.CallContext(ctx, &code, "eth_getCode", cfg.Proxy, "latest"); err != nil {
+		return 0, fmt.Errorf("current proxy code proof failed: %w", err)
 	}
 	if crypto.Keccak256Hash(code) != cfg.ProxyCodeHash {
 		return 0, fmt.Errorf("proxy code hash mismatch")
