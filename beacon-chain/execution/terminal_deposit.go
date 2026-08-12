@@ -174,9 +174,16 @@ func (s *Service) terminalDepositCount(ctx context.Context) (uint64, error) {
 		return 0, fmt.Errorf("current implementation code hash mismatch")
 	}
 	fState := s.cfg.finalizedStateAtStartup
-	if fState == nil || fState.IsNil() || fState.Eth1DepositIndex() != cfg.DepositCount ||
-		fState.Eth1Data().DepositCount != cfg.DepositCount || common.BytesToHash(fState.Eth1Data().DepositRoot) != cfg.DepositRoot {
-		return 0, fmt.Errorf("finalized beacon deposit state proof failed")
+	if fState == nil || fState.IsNil() {
+		return 0, fmt.Errorf("finalized beacon deposit state proof failed: finalized state is nil")
+	}
+	stateEth1Data := fState.Eth1Data()
+	if stateEth1Data == nil {
+		return 0, fmt.Errorf("finalized beacon deposit state proof failed: eth1 data is nil at slot=%d", fState.Slot())
+	}
+	stateDepositRoot := common.BytesToHash(stateEth1Data.DepositRoot)
+	if fState.Eth1DepositIndex() != cfg.DepositCount || stateEth1Data.DepositCount != cfg.DepositCount || stateDepositRoot != cfg.DepositRoot {
+		return 0, fmt.Errorf("finalized beacon deposit state proof failed: slot=%d index=%d expected_index=%d count=%d expected_count=%d root=%s expected_root=%s", fState.Slot(), fState.Eth1DepositIndex(), cfg.DepositCount, stateEth1Data.DepositCount, cfg.DepositCount, stateDepositRoot, cfg.DepositRoot)
 	}
 	if err := s.verifyTerminalDepositCaches(ctx, cfg, false); err != nil {
 		return 0, err
