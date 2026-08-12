@@ -53,6 +53,13 @@ func WithDepositContractAddress(addr common.Address) Option {
 	}
 }
 
+func WithTerminalDepositContractConfig(cfg *TerminalDepositContractConfig) Option {
+	return func(s *Service) error {
+		s.cfg.terminalDepositContract = cfg
+		return nil
+	}
+}
+
 // WithDatabase for the beacon chain database.
 func WithDatabase(database db.HeadAccessDatabase) Option {
 	return func(s *Service) error {

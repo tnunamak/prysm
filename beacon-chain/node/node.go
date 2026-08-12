@@ -798,6 +798,10 @@ func (b *BeaconNode) registerPOWChainService() error {
 	if err != nil {
 		return err
 	}
+	terminalDepositConfig, err := execution.ParseTerminalDepositContractConfig(b.cliCtx.String(flags.TerminalDepositContractConfig.Name))
+	if err != nil {
+		return errors.Wrap(err, "invalid terminal deposit contract config")
+	}
 
 	// skipcq: CRT-D0001
 	opts := append(
@@ -810,6 +814,7 @@ func (b *BeaconNode) registerPOWChainService() error {
 		execution.WithBeaconNodeStatsUpdater(bs),
 		execution.WithFinalizedStateAtStartup(b.finalizedStateAtStartUp),
 		execution.WithJwtId(b.cliCtx.String(flags.JwtId.Name)),
+		execution.WithTerminalDepositContractConfig(terminalDepositConfig),
 	)
 	web3Service, err := execution.NewService(b.ctx, opts...)
 	if err != nil {

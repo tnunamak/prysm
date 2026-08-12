@@ -31,7 +31,6 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
 	"github.com/prysmaticlabs/prysm/v5/config/params"
 	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	contracts "github.com/prysmaticlabs/prysm/v5/contracts/deposit"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	"github.com/prysmaticlabs/prysm/v5/monitoring/clientstats"
 	"github.com/prysmaticlabs/prysm/v5/network"
@@ -103,6 +102,10 @@ type RPCClient interface {
 	CallContext(ctx context.Context, result interface{}, method string, args ...interface{}) error
 }
 
+type depositCountCaller interface {
+	GetDepositCount(opts *bind.CallOpts) ([]byte, error)
+}
+
 type RPCClientEmpty struct {
 }
 
@@ -128,6 +131,7 @@ type config struct {
 	headers                 []string
 	finalizedStateAtStartup state.BeaconState
 	jwtId                   string
+	terminalDepositContract *TerminalDepositContractConfig
 }
 
 // Service fetches important information about the canonical
@@ -149,7 +153,7 @@ type Service struct {
 	rpcClient               RPCClient
 	headerCache             *headerCache // cache to store block hash/block height.
 	latestEth1Data          *ethpb.LatestETH1Data
-	depositContractCaller   *contracts.DepositContractCaller
+	depositContractCaller   depositCountCaller
 	depositTrie             cache.MerkleTree
 	chainStartData          *ethpb.ChainStartData
 	lastReceivedMerkleIndex int64 // Keeps track of the last received index to prevent log spam.

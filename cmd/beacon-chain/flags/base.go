@@ -154,6 +154,11 @@ var (
 		Usage: "The eth1 block in which the deposit contract was deployed.",
 		Value: 11184524,
 	}
+	TerminalDepositContractConfig = &cli.StringFlag{
+		Name:    "terminal-deposit-contract-config",
+		Usage:   "JSON proof contract for a terminal deposit proxy; disabled when empty",
+		EnvVars: []string{"PRYSM_TERMINAL_DEPOSIT_CONTRACT_CONFIG"},
+	}
 	// SetGCPercent is the percentage of current live allocations at which the garbage collector is to run.
 	SetGCPercent = &cli.IntFlag{
 		Name:  "gc-percent",

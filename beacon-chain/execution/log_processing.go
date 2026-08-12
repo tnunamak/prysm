@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
@@ -111,6 +110,9 @@ func (s *Service) ProcessLog(ctx context.Context, depositLog *gethtypes.Log) err
 // the eth1 chain by trying to ascertain which participant deposited
 // in the contract.
 func (s *Service) ProcessDepositLog(ctx context.Context, depositLog *gethtypes.Log) error {
+	if cfg := s.cfg.terminalDepositContract; cfg != nil && depositLog.BlockNumber > cfg.TerminalBlock {
+		return errors.Errorf("deposit event at block %d after terminal deposit block %d", depositLog.BlockNumber, cfg.TerminalBlock)
+	}
 	pubkey, withdrawalCredentials, amount, signature, merkleTreeIndex, err := contracts.UnpackDepositLogData(depositLog.Data)
 	if err != nil {
 		return errors.Wrap(err, "Could not unpack log")
@@ -297,7 +299,7 @@ func (s *Service) processPastLogs(ctx context.Context) error {
 	currentBlockNum = max(currentBlockNum, deploymentBlock)
 	// To store all blocks.
 	headersMap := make(map[uint64]*types.HeaderInfo)
-	rawLogCount, err := s.depositContractCaller.GetDepositCount(&bind.CallOpts{})
+	rawLogCount, err := s.currentDepositCount(ctx)
 	if err != nil {
 		return err
 	}

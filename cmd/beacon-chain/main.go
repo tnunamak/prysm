@@ -55,6 +55,7 @@ var appFlags = []cli.Flag{
 	flags.GPRCGatewayCorsDomain,
 	flags.MinSyncPeers,
 	flags.ContractDeploymentBlock,
+	flags.TerminalDepositContractConfig,
 	flags.SetGCPercent,
 	flags.BlockBatchLimit,
 	flags.BlockBatchLimitBurstFactor,
